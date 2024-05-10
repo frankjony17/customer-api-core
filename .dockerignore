@@ -1,0 +1,25 @@
+# Ignore .venv directory
+.venv
+
+# Ignore other files and directories that shouldn't be copied into the Docker image
+*.pyc
+*.pyo
+*.pyd
+__pycache__
+*.log
+*.sql
+*.sqlite
+*.git
+*.gitignore
+.dockerignore
+*Dockerfile
+README.md
+LICENSE
+docs/
+Makefile
+docker-compose*
+db
+scripts
+docker/
+.mypy_cache/
+.pytest_cache/

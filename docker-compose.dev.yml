@@ -1,0 +1,93 @@
+version: "3.8"
+
+x-logging-template: &logging_template
+  driver: "json-file"
+  options:
+    max-size: ${LOG_MAX_SIZE}
+    max-file: ${LOG_MAX_FILE}
+
+services:
+  # ------- Utilities -------
+  postgres:
+    container_name: postgres
+    image: postgres:15.2-alpine
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    logging: *logging_template
+    healthcheck:
+      test: pg_isready --username ${POSTGRES_USER} --dbname ${POSTGRES_DB}
+      interval: 10s
+      start_period: 3s
+    env_file:
+      - .env
+    environment:
+      - PGPORT=${POSTGRES_PORT}
+
+  # ------- DevOps Interfaces -------
+  pgadmin:
+    container_name: pgadmin
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PGADMIN_PORT}:${PGADMIN_PORT}"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./mount/pgadmin/log:/var/log/pgadmin
+    logging: *logging_template
+    env_file:
+      - .env
+    environment:
+      - PGADMIN_LISTEN_PORT=${PGADMIN_PORT?Variable not set}
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_USER?Variable not set}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD?Variable not set}
+
+  # ------- Core Services -------
+  python-microservice-template-api-core:
+    container_name: api
+    image: "${DOCKER_IMAGE_PREFIX}-${APP_NAME}:${APP_TAG-latest}"
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
+    volumes:
+      - .:/app:delegated
+      - /app/.venv
+      - poetry_cache:${POETRY_CACHE}
+    logging: *logging_template
+    healthcheck:
+      test: python -c "import socket; exit(0) if 0 == socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect_ex(('127.0.0.1', $${APP_PORT} )) else exit(1)"
+      interval: 10s
+      start_period: 3s
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=development
+      - TESTING=${TESTING?Variable not set}
+      - APP_HOST=0.0.0.0
+      - APP_PORT=${APP_PORT?Variable not set}
+    build:
+      context: .
+      dockerfile: ./python.Dockerfile
+      args:
+        - ENVIRONMENT=development
+        - POETRY_HOME=${POETRY_HOME?Variable not set}
+        - POETRY_CACHE=${POETRY_CACHE?Variable not set}
+        - POETRY_CONFIG=${POETRY_CONFIG?Variable not set}
+      ssh:
+        - default
+    entrypoint: ["bash", "/app/start-reload.sh"]
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  poetry_cache:
+
+networks:
+  default:
+    name: ${NETWORK_NAME?Variable not set}
+    external: true
